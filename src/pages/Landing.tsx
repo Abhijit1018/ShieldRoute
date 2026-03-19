@@ -1,4 +1,4 @@
-import { ArrowRight, Shield, Zap, Clock, Users, TrendingUp, MapPin, Star, ChevronRight } from 'lucide-react';
+import { ArrowRight, Shield, Clock, Users, TrendingUp, MapPin, Star, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ZONE_DATA, ZONE_RISK_LEVEL, ZONE_DISPLAY_NAMES, TESTIMONIALS } from '../data/mockData';
 import type { Zone } from '../types';

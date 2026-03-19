@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, RefreshCw, Zap, Wind, Thermometer, Wifi, AlertOctagon, CheckCircle, Clock, TrendingDown } from 'lucide-react';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart,
 } from 'recharts';
 import { useApp } from '../context/AppContext';
 import { EARNINGS_CHART_DATA } from '../data/mockData';
@@ -299,7 +299,8 @@ export default function Dashboard() {
               <YAxis tick={{ fill: '#6B7280', fontSize: 12 }} tickFormatter={v => `₹${v}`} />
               <Tooltip
                 contentStyle={{ background: '#1C2537', border: '1px solid #1F2937', borderRadius: '8px', color: '#F9FAFB' }}
-                formatter={(v: number) => [`₹${v}`, '']}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                formatter={(v: any) => [`₹${v ?? 0}`, '']}
               />
               <Legend />
               <Area type="monotone" dataKey="potentialLoss" name="Potential Loss" stroke="#EF4444" fill="#EF4444" fillOpacity={0.15} strokeWidth={2} />

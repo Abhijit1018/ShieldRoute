@@ -1,0 +1,162 @@
+// Prisma schema for ShieldRoute
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Platform {
+  Zomato
+  Swiggy
+}
+
+enum Zone {
+  Andheri
+  Bandra
+  Dadar
+  Dharavi
+  Kurla
+  Thane
+  NaviMumbai
+  Borivali
+}
+
+enum Plan {
+  Basic
+  Standard
+  Premium
+}
+
+enum PolicyStatus {
+  Active
+  Expired
+  Cancelled
+}
+
+enum ClaimStatus {
+  Processing
+  Approved
+  Paid
+  Rejected
+}
+
+enum TriggerType {
+  HeavyRain
+  SeverePollution
+  ExtremeHeat
+  PlatformOutage
+  CivilDisruption
+}
+
+model Rider {
+  id           String   @id @default(cuid())
+  name         String
+  phone        String   @unique
+  platform     Platform
+  yearsActive  Int
+  zone         Zone
+  weeklyHours  Int
+  weeklyEarnings Int
+  peakHours    String[] // ['Morning', 'Evening', etc.]
+  riskScore    Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  policies     Policy[]
+  otpCodes     OtpCode[]
+}
+
+model Policy {
+  id              String       @id @default(cuid())
+  policyNumber    String       @unique // SR12-345678 format
+  riderId         String
+  rider           Rider        @relation(fields: [riderId], references: [id])
+  plan            Plan
+  zone            Zone
+  weeklyPremium   Int          // in paise (₹175 = 17500)
+  coveragePerDay  Int          // in paise
+  maxWeeklyClaim  Int          // in paise
+  status          PolicyStatus @default(Active)
+  startDate       DateTime     @default(now())
+  renewalDate     DateTime
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  claims          Claim[]
+  premiumPayments PremiumPayment[]
+}
+
+model Claim {
+  id              String      @id @default(cuid())
+  claimNumber     String      @unique // CL12-345678 format
+  policyId        String
+  policy          Policy      @relation(fields: [policyId], references: [id])
+  triggerType     TriggerType
+  triggerEventId  String      // reference to the TriggerEvent that fired
+  triggerEvent    TriggerEvent @relation(fields: [triggerEventId], references: [id])
+  disruptionHours Float
+  payoutAmount    Int         // in paise
+  upiRef          String?
+  status          ClaimStatus @default(Processing)
+  fraudScore      Int         @default(0)  // 0-100, higher = more suspicious
+  fraudFlags      String[]    // list of flag reasons
+  approvedAt      DateTime?
+  paidAt          DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model TriggerEvent {
+  id          String      @id @default(cuid())
+  zone        Zone
+  triggerType TriggerType
+  value       Float       // actual measured value (e.g. 17.3 for mm/hr)
+  threshold   Float       // threshold that was crossed
+  startedAt   DateTime    @default(now())
+  endedAt     DateTime?
+  isActive    Boolean     @default(true)
+  source      String      @default("simulation") // "simulation" | "api"
+
+  claims      Claim[]
+}
+
+model PremiumPayment {
+  id            String   @id @default(cuid())
+  policyId      String
+  policy        Policy   @relation(fields: [policyId], references: [id])
+  amount        Int      // in paise
+  razorpayOrderId String?
+  razorpayPaymentId String?
+  status        String   @default("pending") // pending | paid | failed
+  weekStart     DateTime
+  createdAt     DateTime @default(now())
+}
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  riderId   String?
+  rider     Rider?   @relation(fields: [riderId], references: [id])
+  phone     String
+  code      String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model ZoneRiskSnapshot {
+  id             String   @id @default(cuid())
+  zone           Zone
+  weekStart      DateTime
+  weatherRisk    Int
+  strikeRisk     Int
+  outageRisk     Int
+  disruptionDays Int
+  multiplier     Float
+  createdAt      DateTime @default(now())
+
+  @@unique([zone, weekStart])
+}

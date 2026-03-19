@@ -179,7 +179,8 @@ export default function Admin() {
                 <YAxis tick={{ fill: '#6B7280', fontSize: 12 }} tickFormatter={v => `${v}%`} domain={[0, 100]} />
                 <Tooltip
                   contentStyle={{ background: '#1C2537', border: '1px solid #1F2937', borderRadius: '8px', color: '#F9FAFB' }}
-                  formatter={(v: number) => [`${v}%`, 'Disruption Prob.']}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(v: any) => [`${v ?? 0}%`, 'Disruption Prob.']}
                 />
                 <Bar dataKey="probability" radius={[4, 4, 0, 0]}>
                   {FORECAST_DATA.map((entry, index) => (
