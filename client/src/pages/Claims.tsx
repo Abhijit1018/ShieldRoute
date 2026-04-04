@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CheckCircle2, Clock3, ClipboardList, Hourglass, IndianRupee } from 'lucide-react';
+import { CheckCircle2, Clock3, ClipboardList, Hourglass, IndianRupee, RefreshCw, XCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import type { ClaimStatus } from '../types';
 
@@ -8,19 +8,40 @@ const STATUS_STYLE: Record<ClaimStatus, { color: string; badge: string; icon: ty
   Processing: { color: 'text-[#F59E0B]', badge: 'bg-[#F59E0B]/10 text-[#F59E0B]', icon: Hourglass },
   Approved: { color: 'text-[#14B8A6]', badge: 'bg-[#14B8A6]/10 text-[#14B8A6]', icon: CheckCircle2 },
   Paid: { color: 'text-green-400', badge: 'bg-green-500/10 text-green-400', icon: CheckCircle2 },
+  Rejected: { color: 'text-[#EF4444]', badge: 'bg-[#EF4444]/10 text-[#EF4444]', icon: XCircle },
 };
 
 export default function Claims() {
-  const { state } = useApp();
+  const { state, refreshData, addToast } = useApp();
   const navigate = useNavigate();
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    if (!state.policy) {
+    if (state.isHydrating) return;
+    if (!state.auth) {
       navigate('/onboard');
+      return;
     }
-  }, [state.policy, navigate]);
 
-  if (!state.policy) return null;
+    void refreshData({ silent: true });
+  }, [navigate, refreshData, state.auth, state.isHydrating]);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await refreshData();
+    addToast('Claims synced from database.', 'success');
+    setRefreshing(false);
+  }
+
+  if (state.isHydrating) {
+    return (
+      <div className="min-h-screen bg-[#0A0E1A] flex items-center justify-center text-[#6B7280]">
+        Loading claims...
+      </div>
+    );
+  }
+
+  if (!state.auth) return null;
 
   return (
     <div className="min-h-screen bg-[#0A0E1A] py-8 px-4 sm:px-6 lg:px-8">
@@ -28,18 +49,32 @@ export default function Claims() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-black text-[#F9FAFB]">Claims</h1>
-            <p className="text-[#6B7280] text-sm mt-1">Track auto-generated claims and payout status</p>
+            <p className="text-[#6B7280] text-sm mt-1">Live claim history from your backend database</p>
           </div>
-          <span className="text-xs px-2.5 py-1 rounded-full bg-[#1C2537] border border-[#1F2937] text-[#6B7280]">
-            {state.claims.length} total
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs px-2.5 py-1 rounded-full bg-[#1C2537] border border-[#1F2937] text-[#6B7280]">
+              {state.claims.length} total
+            </span>
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                refreshing
+                  ? 'bg-[#1F2937] text-[#6B7280] cursor-not-allowed'
+                  : 'bg-[#14B8A6]/10 text-[#14B8A6] hover:bg-[#14B8A6]/20'
+              }`}
+            >
+              <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+              {refreshing ? 'Syncing...' : 'Refresh'}
+            </button>
+          </div>
         </div>
 
         {state.claims.length === 0 ? (
           <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-10 text-center">
             <ClipboardList size={36} className="mx-auto text-[#1F2937] mb-3" />
             <h2 className="text-lg font-bold text-[#F9FAFB]">No claims yet</h2>
-            <p className="text-[#6B7280] text-sm mt-1">Claims are created automatically when a trigger is activated.</p>
+            <p className="text-[#6B7280] text-sm mt-1">Claims appear here after backend trigger events and processing.</p>
             <Link
               to="/dashboard"
               className="inline-flex items-center gap-2 mt-5 px-4 py-2.5 bg-[#14B8A6] hover:bg-[#0D9488] text-white rounded-xl text-sm font-bold transition-colors"
@@ -50,7 +85,7 @@ export default function Claims() {
           </div>
         ) : (
           <div className="space-y-3">
-            {state.claims.map((claim) => {
+            {state.claims.map(claim => {
               const cfg = STATUS_STYLE[claim.status];
               const StatusIcon = cfg.icon;
               const createdAt = new Date(claim.timestamp);
@@ -66,7 +101,9 @@ export default function Claims() {
                           {claim.status}
                         </span>
                       </div>
-                      <div className="text-xs text-[#6B7280]">{claim.triggeredBy} · {createdAt.toLocaleString('en-IN')}</div>
+                      <div className="text-xs text-[#6B7280]">
+                        {claim.triggeredBy} · {createdAt.toLocaleString('en-IN')}
+                      </div>
                     </div>
 
                     <div className="text-left sm:text-right">

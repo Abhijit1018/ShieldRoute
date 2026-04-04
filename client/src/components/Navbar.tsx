@@ -1,6 +1,7 @@
-import { Activity, ClipboardList, Home, LayoutDashboard, LogIn, Shield } from 'lucide-react';
+import { Activity, ClipboardList, Home, LayoutDashboard, LogIn, LogOut, Shield } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { isAdminAuthenticated } from '../utils/adminAuth';
+import { useApp } from '../context/AppContext';
 
 const NAV_LINKS = [
   { to: '/', label: 'Home', icon: Home },
@@ -11,9 +12,16 @@ const NAV_LINKS = [
 
 export default function Navbar() {
   const { pathname } = useLocation();
+  const { state, clearAuth, addToast } = useApp();
   const adminAuthed = isAdminAuthenticated();
+  const riderAuthed = Boolean(state.auth);
   const adminPath = adminAuthed ? '/admin' : '/admin-login';
   const adminLabel = adminAuthed ? 'Admin Panel' : 'Admin Login';
+
+  function handleRiderLogout() {
+    clearAuth();
+    addToast('Logged out successfully.', 'info');
+  }
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-[#1F2937] bg-[#0A0E1A]/90 backdrop-blur-sm">
@@ -49,6 +57,15 @@ export default function Navbar() {
 
           {/* Right side — live status */}
           <div className="flex items-center gap-3">
+            {riderAuthed && (
+              <button
+                onClick={handleRiderLogout}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1F2937] text-xs text-[#6B7280] hover:text-[#F9FAFB] hover:border-[#14B8A6]/40 transition-colors"
+              >
+                <LogOut size={13} />
+                Rider Logout
+              </button>
+            )}
             <Link
               to={adminPath}
               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#14B8A6]/30 text-xs text-[#14B8A6] hover:bg-[#14B8A6]/10 transition-colors"
@@ -95,6 +112,15 @@ export default function Navbar() {
             <LogIn size={13} />
             {adminLabel}
           </Link>
+          {riderAuthed && (
+            <button
+              onClick={handleRiderLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap text-[#6B7280] hover:text-[#F9FAFB]"
+            >
+              <LogOut size={13} />
+              Logout
+            </button>
+          )}
         </div>
       </div>
     </nav>

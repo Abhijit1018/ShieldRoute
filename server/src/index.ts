@@ -10,6 +10,7 @@ import policyRoutes from './routes/policy';
 import claimsRoutes from './routes/claims';
 import adminRoutes from './routes/admin';
 import paymentsRoutes from './routes/payments';
+import triggersRoutes from './routes/triggers';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -59,6 +60,7 @@ app.use('/api/policy', policyRoutes);
 app.use('/api/claims', claimsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payments', paymentsRoutes);
+app.use('/api/triggers', triggersRoutes);
 
 // Health check
 app.get('/health', (_req, res) => {

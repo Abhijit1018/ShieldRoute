@@ -16,7 +16,13 @@ export type PeakHour = 'Morning' | 'Afternoon' | 'Evening' | 'Night';
 
 export type TriggerStatus = 'NORMAL' | 'WARNING' | 'TRIGGERED';
 
-export type ClaimStatus = 'Processing' | 'Approved' | 'Paid';
+export type ClaimStatus = 'Processing' | 'Approved' | 'Paid' | 'Rejected';
+
+export interface AuthSession {
+  token: string;
+  riderId: string;
+  phone: string;
+}
 
 export interface OnboardingData {
   // Step 1
@@ -45,7 +51,7 @@ export interface OnboardingData {
 
 export interface Policy {
   policyId: string;
-  status: 'Active' | 'Expired';
+  status: 'Active' | 'Expired' | 'Cancelled';
   startDate: string;
   renewalDate: string;
   onboarding: OnboardingData;
@@ -59,6 +65,15 @@ export interface Claim {
   status: ClaimStatus;
   timestamp: Date;
   upiRef: string;
+}
+
+export interface Payment {
+  id: string;
+  orderId: string;
+  amount: number;
+  status: string;
+  weekStart: string;
+  createdAt: string;
 }
 
 export interface TriggerState {
@@ -76,16 +91,24 @@ export interface Toast {
 }
 
 export interface AppState {
+  auth: AuthSession | null;
   onboarding: OnboardingData | null;
   policy: Policy | null;
   claims: Claim[];
+  payments: Payment[];
   toasts: Toast[];
+  isHydrating: boolean;
 }
 
 export type AppAction =
+  | { type: 'SET_AUTH'; payload: AuthSession }
+  | { type: 'CLEAR_AUTH' }
+  | { type: 'SET_HYDRATING'; payload: boolean }
   | { type: 'SET_ONBOARDING'; payload: OnboardingData }
-  | { type: 'SET_POLICY'; payload: Policy }
+  | { type: 'SET_POLICY'; payload: Policy | null }
+  | { type: 'SET_CLAIMS'; payload: Claim[] }
   | { type: 'ADD_CLAIM'; payload: Claim }
   | { type: 'UPDATE_CLAIM'; payload: { id: string; status: ClaimStatus } }
+  | { type: 'SET_PAYMENTS'; payload: Payment[] }
   | { type: 'ADD_TOAST'; payload: Toast }
   | { type: 'REMOVE_TOAST'; payload: string };
