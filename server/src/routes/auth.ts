@@ -102,7 +102,8 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
   const token = jwt.sign(
     { riderId: rider.id, phone: rider.phone },
     process.env.JWT_SECRET!,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { expiresIn: (process.env.JWT_EXPIRES_IN || '7d') as any }
   );
 
   res.json({
