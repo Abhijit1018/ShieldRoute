@@ -99,10 +99,20 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
     });
   }
 
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    res.status(500).json({ success: false, error: 'JWT secret is not configured' });
+    return;
+  }
+
+  const signOptions: jwt.SignOptions = {
+    expiresIn: (process.env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn']) ?? '7d',
+  };
+
   const token = jwt.sign(
     { riderId: rider.id, phone: rider.phone },
-    process.env.JWT_SECRET!,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    jwtSecret,
+    signOptions
   );
 
   res.json({

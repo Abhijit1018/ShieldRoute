@@ -1,6 +1,6 @@
 import { Router, type Response } from 'express';
 import { requireAuth } from '../middleware/auth';
-import type { AuthRequest } from '../types';
+import type { AuthRequest, Plan, Platform, Zone } from '../types';
 import prisma from '../db/prisma';
 import { generatePolicyNumber, calculateWeeklyPremium, calculateCoveragePerDay, calculateMaxWeeklyClaim } from '../services/premiumService';
 
@@ -44,9 +44,12 @@ router.post('/renew', requireAuth, async (req: AuthRequest, res: Response): Prom
   const rider = current.rider;
   const riskScore = rider.riskScore;
   const weeklyEarnings = rider.weeklyEarnings;
+  const zone = rider.zone as Zone;
+  const platform = rider.platform as Platform;
+  const plan = current.plan as Plan;
 
-  const weeklyPremium  = calculateWeeklyPremium(weeklyEarnings, rider.zone as any, rider.weeklyHours, rider.platform as any, riskScore, current.plan as any);
-  const coveragePerDay = calculateCoveragePerDay(weeklyEarnings, current.plan as any);
+  const weeklyPremium  = calculateWeeklyPremium(weeklyEarnings, zone, rider.weeklyHours, platform, riskScore, plan);
+  const coveragePerDay = calculateCoveragePerDay(weeklyEarnings, plan);
   const maxWeeklyClaim = calculateMaxWeeklyClaim(weeklyEarnings);
   const renewalDate    = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 

@@ -1,7 +1,10 @@
 import { Router, type Request, type Response } from 'express';
 import prisma from '../db/prisma';
+import type { Zone } from '../types';
+import { requireAuth } from '../middleware/auth';
 
 const router = Router();
+router.use(requireAuth);
 
 // GET /api/admin/kpis — Dashboard KPIs
 router.get('/kpis', async (_req: Request, res: Response): Promise<void> => {
@@ -44,15 +47,15 @@ router.get('/kpis', async (_req: Request, res: Response): Promise<void> => {
 
 // GET /api/admin/zones — Zone-level breakdown
 router.get('/zones', async (_req: Request, res: Response): Promise<void> => {
-  const zones = ['Andheri', 'Bandra', 'Dadar', 'Dharavi', 'Kurla', 'Thane', 'NaviMumbai', 'Borivali'];
+  const zones: Zone[] = ['Andheri', 'Bandra', 'Dadar', 'Dharavi', 'Kurla', 'Thane', 'NaviMumbai', 'Borivali'];
 
   const zoneData = await Promise.all(
     zones.map(async (zone) => {
       const [activePolicies, weekClaims] = await Promise.all([
-        prisma.policy.count({ where: { zone: zone as any, status: 'Active' } }),
+        prisma.policy.count({ where: { zone, status: 'Active' } }),
         prisma.claim.count({
           where: {
-            policy: { zone: zone as any },
+            policy: { zone },
             createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
           },
         }),

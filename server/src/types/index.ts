@@ -3,6 +3,7 @@ import type { Request } from 'express';
 export type Zone = 'Andheri' | 'Bandra' | 'Dadar' | 'Dharavi' | 'Kurla' | 'Thane' | 'NaviMumbai' | 'Borivali';
 export type Platform = 'Zomato' | 'Swiggy';
 export type Plan = 'Basic' | 'Standard' | 'Premium';
+export type PeakHour = 'Morning' | 'Afternoon' | 'Evening' | 'Night';
 export type TriggerType = 'HeavyRain' | 'SeverePollution' | 'ExtremeHeat' | 'PlatformOutage' | 'CivilDisruption';
 
 export interface AuthPayload {

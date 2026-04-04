@@ -66,8 +66,9 @@ model Rider {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  policies     Policy[]
-  otpCodes     OtpCode[]
+  policies           Policy[]
+  otpCodes           OtpCode[]
+  mlPremiumSnapshots MLPremiumSnapshot[]
 }
 
 model Policy {
@@ -145,6 +146,21 @@ model OtpCode {
   expiresAt DateTime
   used      Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+model MLPremiumSnapshot {
+  id               String   @id @default(cuid())
+  riderId          String
+  rider            Rider    @relation(fields: [riderId], references: [id])
+  zone             Zone
+  weeklyPremium    Int      // in paise
+  baseAmount       Int
+  seasonalAdj      Int      // positive = increase, negative = decrease (paise)
+  zoneDiscount     Int      // negative = discount (paise)
+  personalDiscount Int
+  fraudPenalty     Int
+  explanation      Json     // ExplainabilityItem[]
+  createdAt        DateTime @default(now())
 }
 
 model ZoneRiskSnapshot {

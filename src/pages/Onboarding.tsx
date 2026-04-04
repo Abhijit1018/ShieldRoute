@@ -126,7 +126,7 @@ export default function Onboarding() {
     }, 3200);
 
     return () => { clearInterval(lineTimer); clearInterval(progressTimer); clearTimeout(doneTimer); };
-  }, [step]);
+  }, [step, form]);
 
   function enroll() {
     if (!aiResult) return;

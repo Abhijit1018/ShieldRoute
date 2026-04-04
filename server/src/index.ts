@@ -9,6 +9,8 @@ import onboardingRoutes from './routes/onboarding';
 import policyRoutes from './routes/policy';
 import claimsRoutes from './routes/claims';
 import adminRoutes from './routes/admin';
+import triggersRoutes from './routes/triggers';
+import { startTriggerMonitor } from './services/triggerMonitor';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -44,6 +46,7 @@ app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/policy',     policyRoutes);
 app.use('/api/claims',     claimsRoutes);
 app.use('/api/admin',      adminRoutes);
+app.use('/api/triggers',   triggersRoutes);
 
 // Health check
 app.get('/health', (_req, res) => {
@@ -62,6 +65,7 @@ app.use((_req, res) => {
 
 // Global error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  void _next;
   console.error('[Error]', err.message);
   res.status(500).json({ success: false, error: 'Internal server error' });
 });
@@ -73,6 +77,7 @@ app.listen(PORT, () => {
   ║   Environment: ${process.env.NODE_ENV || 'development'}         ║
   ╚════════════════════════════════════╝
   `);
+  startTriggerMonitor();
 });
 
 export default app;

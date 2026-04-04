@@ -125,6 +125,106 @@ router.post('/trigger', async (req: Request, res: Response): Promise<void> => {
   });
 });
 
+// GET /api/claims/intelligence — ML-driven insights for the authenticated rider
+router.get('/intelligence', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  const riderId = req.rider!.riderId;
+
+  const policy = await prisma.policy.findFirst({
+    where: { riderId, status: 'Active' },
+    include: { rider: true },
+  });
+
+  if (!policy) {
+    res.status(404).json({ success: false, error: 'No active policy' });
+    return;
+  }
+
+  const eightWeeksAgo = new Date();
+  eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
+
+  const allClaims = await prisma.claim.findMany({
+    where: { policyId: policy.id, createdAt: { gte: eightWeeksAgo } },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const paidClaims = allClaims.filter(c => c.status === 'Paid');
+  const totalPaidOut = paidClaims.reduce((sum, c) => sum + c.payoutAmount, 0);
+  const avgClaimsPerWeek = Math.round((paidClaims.length / 8) * 10) / 10;
+
+  // Most common trigger
+  const triggerCounts: Record<string, number> = {};
+  for (const c of allClaims) {
+    triggerCounts[c.triggerType] = (triggerCounts[c.triggerType] ?? 0) + 1;
+  }
+  const mostCommonTrigger = Object.entries(triggerCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'None';
+
+  // Safe days streak (days since last claim)
+  const lastClaim = paidClaims[0];
+  const safeDaysStreak = lastClaim
+    ? Math.floor((Date.now() - lastClaim.createdAt.getTime()) / 86400000)
+    : 30;
+
+  // Personal safety score
+  const personalSafetyScore = Math.max(0, Math.min(100, 100 - paidClaims.length * 5));
+
+  // Zone risk comparison (simple heuristic)
+  const highRiskZones = ['Dharavi', 'Kurla', 'Dadar'];
+  const lowRiskZones = ['NaviMumbai', 'Bandra'];
+  const zoneRiskComparison: 'above_avg' | 'avg' | 'below_avg' =
+    highRiskZones.includes(policy.zone) ? 'above_avg' :
+    lowRiskZones.includes(policy.zone) ? 'below_avg' : 'avg';
+
+  // Predicted next claim (probabilistic)
+  const TRIGGER_PROB: Record<string, number> = {
+    HeavyRain: 0.45, SeverePollution: 0.20, ExtremeHeat: 0.15,
+    PlatformOutage: 0.12, CivilDisruption: 0.08,
+  };
+  const topTrigger = mostCommonTrigger !== 'None' ? mostCommonTrigger : 'HeavyRain';
+  const estimatedDays = Math.round(7 / (avgClaimsPerWeek || 0.5));
+  const estimatedDate = new Date();
+  estimatedDate.setDate(estimatedDate.getDate() + estimatedDays);
+
+  // AI-generated insight strings
+  const insights: string[] = [];
+  if (safeDaysStreak >= 7) {
+    insights.push(`${safeDaysStreak} consecutive safe days — your safety score is improving`);
+  }
+  if (zoneRiskComparison === 'above_avg') {
+    insights.push(`${policy.zone} zone has above-average disruption history — consider upgrading to Premium plan for full coverage`);
+  }
+  if (zoneRiskComparison === 'below_avg') {
+    insights.push(`${policy.zone} is one of Mumbai's safest zones — you qualify for our zone safety discount`);
+  }
+  if (avgClaimsPerWeek > 1) {
+    insights.push('Your claim frequency is higher than average — ensure you\'re working during low-risk hours');
+  }
+  if (personalSafetyScore >= 80) {
+    insights.push(`Safety score of ${personalSafetyScore}/100 qualifies you for a loyalty discount on renewal`);
+  }
+  const month = new Date().getMonth() + 1;
+  if (month >= 6 && month <= 9) {
+    insights.push('Mumbai monsoon season active — Heavy Rain triggers are significantly more frequent in your zone');
+  }
+
+  res.json({
+    success: true,
+    data: {
+      mostCommonTrigger,
+      avgClaimsPerWeek,
+      zoneRiskComparison,
+      predictedNextClaim: {
+        triggerType: topTrigger,
+        probability: TRIGGER_PROB[topTrigger] ?? 0.3,
+        estimatedDate: estimatedDate.toISOString(),
+      },
+      safeDaysStreak,
+      totalPaidOut: Math.round(totalPaidOut / 100), // convert paise to ₹
+      personalSafetyScore,
+      insights,
+    },
+  });
+});
+
 // GET /api/claims/:id — Get single claim
 router.get('/:id', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   const claim = await prisma.claim.findUnique({

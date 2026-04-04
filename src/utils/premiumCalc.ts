@@ -1,5 +1,16 @@
-import type { Zone, Platform, Plan, OnboardingData } from '../types';
+import type { Zone, Platform, Plan, OnboardingData, PeakHour } from '../types';
 import { ZONE_DATA } from '../data/mockData';
+
+const PEAK_HOUR_WEIGHTS: Record<PeakHour, number> = {
+  Morning: -1,
+  Afternoon: 0,
+  Evening: 2,
+  Night: 3,
+};
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
 export function calculatePremium(
   weeklyEarnings: number,
@@ -27,12 +38,36 @@ export function calculatePremium(
   return Math.max(49, Math.min(249, rounded));
 }
 
-export function calculateRiskScore(zone: Zone, weeklyHours: number): number {
+export function calculateRiskScore(
+  zone: Zone,
+  weeklyHours: number,
+  profile?: {
+    yearsActive?: number;
+    platform?: Platform;
+    weeklyEarnings?: number;
+    peakHours?: PeakHour[];
+  }
+): number {
   const zd = ZONE_DATA[zone];
-  const baseScore = (zd.weatherRisk + zd.strikeRisk + zd.outageRisk) / 3;
-  const hoursAdj = weeklyHours > 50 ? 5 : weeklyHours < 30 ? -5 : 0;
-  const score = 50 + baseScore * 0.6 + hoursAdj;
-  return Math.min(85, Math.max(60, Math.round(score)));
+  const yearsActive = profile?.yearsActive ?? 0;
+  const platform = profile?.platform ?? 'Zomato';
+  const weeklyEarnings = profile?.weeklyEarnings ?? 7000;
+  const peakHours: PeakHour[] = profile?.peakHours?.length ? profile.peakHours : ['Evening'];
+
+  const zoneBase = (zd.weatherRisk + zd.strikeRisk + zd.outageRisk) / 3;
+  const peakExposure = peakHours.reduce((sum, h) => sum + PEAK_HOUR_WEIGHTS[h], 0) / peakHours.length;
+
+  const score =
+    50 +
+    zoneBase * 0.55 +
+    (weeklyHours - 40) * 0.22 +
+    -Math.min(8, yearsActive * 1.4) +
+    (platform === 'Swiggy' ? 1.5 : 0) +
+    clamp((weeklyEarnings - 7000) / 2500, -2, 3) +
+    peakExposure * 1.1 +
+    (weeklyHours > 55 && peakHours.includes('Night') ? 2 : 0);
+
+  return clamp(Math.round(score), 58, 90);
 }
 
 export function getZoneSafetyRating(zone: Zone): 'A' | 'B' | 'C' {
@@ -53,8 +88,14 @@ export function buildOnboardingResult(data: Partial<OnboardingData>): Partial<On
   const earnings = data.weeklyEarnings || 5000;
   const hours = data.weeklyHours || 40;
   const platform = data.platform || 'Zomato';
+  const peakHours: PeakHour[] = data.peakHours && data.peakHours.length > 0 ? data.peakHours : ['Evening'];
 
-  const riskScore = calculateRiskScore(zone, hours);
+  const riskScore = calculateRiskScore(zone, hours, {
+    yearsActive: data.yearsActive ?? 0,
+    platform,
+    weeklyEarnings: earnings,
+    peakHours,
+  });
   const zoneSafetyRating = getZoneSafetyRating(zone);
   const recommendedPlan = getRecommendedPlan(riskScore);
 

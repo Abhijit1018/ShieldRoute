@@ -1,6 +1,6 @@
-import type { Zone, Platform, Plan } from '../types';
+import type { Zone, Platform, Plan, PeakHour } from '../types';
 
-const ZONE_MULTIPLIERS: Record<Zone, number> = {
+export const ZONE_MULTIPLIERS: Record<Zone, number> = {
   Andheri:    1.00,
   Bandra:     0.90,
   Dadar:      1.10,
@@ -22,11 +22,48 @@ const ZONE_DATA: Record<Zone, { weatherRisk: number; strikeRisk: number; outageR
   Borivali:   { weatherRisk: 32, strikeRisk: 14, outageRisk: 10, disruptionDays: 8  },
 };
 
-export function calculateRiskScore(zone: Zone, weeklyHours: number): number {
+const PEAK_HOUR_WEIGHTS: Record<PeakHour, number> = {
+  Morning: -1,
+  Afternoon: 0,
+  Evening: 2,
+  Night: 3,
+};
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+export function calculateRiskScore(
+  zone: Zone,
+  weeklyHours: number,
+  profile?: {
+    yearsActive?: number;
+    platform?: Platform;
+    weeklyEarnings?: number;
+    peakHours?: PeakHour[];
+  }
+): number {
   const zd = ZONE_DATA[zone];
-  const baseScore = (zd.weatherRisk + zd.strikeRisk + zd.outageRisk) / 3;
-  const hoursAdj = weeklyHours > 50 ? 5 : weeklyHours < 30 ? -5 : 0;
-  return Math.min(85, Math.max(60, Math.round(50 + baseScore * 0.6 + hoursAdj)));
+
+  const yearsActive = profile?.yearsActive ?? 0;
+  const platform = profile?.platform ?? 'Zomato';
+  const weeklyEarnings = profile?.weeklyEarnings ?? 7000;
+  const peakHours: PeakHour[] = profile?.peakHours?.length ? profile.peakHours : ['Evening'];
+
+  const zoneBase = (zd.weatherRisk + zd.strikeRisk + zd.outageRisk) / 3;
+  const peakExposure = peakHours.reduce((sum, h) => sum + PEAK_HOUR_WEIGHTS[h], 0) / peakHours.length;
+
+  const score =
+    50 +
+    zoneBase * 0.55 +
+    (weeklyHours - 40) * 0.22 +
+    -Math.min(8, yearsActive * 1.4) +
+    (platform === 'Swiggy' ? 1.5 : 0) +
+    clamp((weeklyEarnings - 7000) / 2500, -2, 3) +
+    peakExposure * 1.1 +
+    (weeklyHours > 55 && peakHours.includes('Night') ? 2 : 0);
+
+  return clamp(Math.round(score), 58, 90);
 }
 
 export function calculateWeeklyPremium(

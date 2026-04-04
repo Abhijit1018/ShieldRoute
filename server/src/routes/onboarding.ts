@@ -37,9 +37,14 @@ router.post('/assess', requireAuth, async (req: AuthRequest, res: Response): Pro
     return;
   }
 
-  const { zone, weeklyHours, platform, weeklyEarnings } = parsed.data;
+  const { zone, weeklyHours, platform, weeklyEarnings, yearsActive, peakHours } = parsed.data;
 
-  const riskScore = calculateRiskScore(zone, weeklyHours);
+  const riskScore = calculateRiskScore(zone, weeklyHours, {
+    yearsActive,
+    platform,
+    weeklyEarnings,
+    peakHours,
+  });
   const zoneSafetyRating = getZoneSafetyRating(zone);
   const recommendedPlan = getRecommendedPlan(riskScore);
   const zoneBreakdown = getZoneRiskBreakdown(zone);
@@ -76,7 +81,12 @@ router.post('/enroll', requireAuth, async (req: AuthRequest, res: Response): Pro
   const riderId = req.rider!.riderId;
   const { name, platform, yearsActive, zone, weeklyHours, weeklyEarnings, peakHours, selectedPlan } = parsed.data;
 
-  const riskScore = calculateRiskScore(zone, weeklyHours);
+  const riskScore = calculateRiskScore(zone, weeklyHours, {
+    yearsActive,
+    platform,
+    weeklyEarnings,
+    peakHours,
+  });
 
   // Update rider profile
   const rider = await prisma.rider.update({
