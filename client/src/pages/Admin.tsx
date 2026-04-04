@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
-import { Shield, AlertTriangle, TrendingUp, Users, DollarSign, Activity, X } from 'lucide-react';
+import { Shield, AlertTriangle, TrendingUp, Users, DollarSign, Activity, LogOut, X } from 'lucide-react';
 import { ZONE_DATA, ZONE_RISK_LEVEL, ZONE_DISPLAY_NAMES, ADMIN_ZONE_STATS, FORECAST_DATA, PNL_DATA, FRAUD_FLAGS } from '../data/mockData';
+import { useApp } from '../context/AppContext';
+import { setAdminAuthenticated } from '../utils/adminAuth';
 import type { Zone } from '../types';
 
 const ALL_ZONES = Object.keys(ZONE_DATA) as Zone[];
@@ -88,9 +91,17 @@ function FraudModal({ flag, onClose }: FraudModalProps) {
 }
 
 export default function Admin() {
+  const navigate = useNavigate();
+  const { addToast } = useApp();
   const [fraudModal, setFraudModal] = useState<typeof FRAUD_FLAGS[number] | null>(null);
 
   const highRiskDay = FORECAST_DATA.find(d => d.probability > 70);
+
+  function handleLogout() {
+    setAdminAuthenticated(false);
+    addToast('Admin logged out.', 'info');
+    navigate('/admin-login');
+  }
 
   return (
     <div className="min-h-screen bg-[#0A0E1A] py-8 px-4 sm:px-6 lg:px-8">
@@ -102,9 +113,18 @@ export default function Admin() {
             <h1 className="text-2xl font-black text-[#F9FAFB]">Insurer Intelligence Center</h1>
             <p className="text-[#6B7280] text-sm mt-0.5">ShieldRoute — Mumbai Operations Dashboard</p>
           </div>
-          <div className="flex items-center gap-2 bg-[#111827] border border-[#1F2937] px-4 py-2 rounded-xl">
-            <Activity size={14} className="text-[#14B8A6]" />
-            <LiveClock />
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-[#111827] border border-[#1F2937] px-4 py-2 rounded-xl">
+              <Activity size={14} className="text-[#14B8A6]" />
+              <LiveClock />
+            </div>
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#EF4444]/30 text-[#EF4444] hover:bg-[#EF4444]/10 text-xs font-medium transition-colors"
+            >
+              <LogOut size={13} />
+              Logout
+            </button>
           </div>
         </div>
 

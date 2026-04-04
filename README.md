@@ -154,25 +154,27 @@ The rider receives a push notification at each stage. They never open a form. Th
 
 ## Application Structure
 
+The project is organized as a monorepo with separate `client` and `server` directories for production-ready development.
+
 ```
 shieldroute/
-├── src/
-│   ├── pages/
-│   │   ├── Landing.tsx        # Hero, zone risk map, how-it-works, testimonials
-│   │   ├── Onboarding.tsx     # 4-step form: identity, work profile, AI assessment, enroll
-│   │   ├── Dashboard.tsx      # Policy card, live triggers, auto-claims, earnings chart
-│   │   └── Admin.tsx          # Insurer: KPIs, zone heatmap, fraud, forecast, P&L
-│   ├── components/
-│   │   ├── Navbar.tsx         # Persistent nav with live Mumbai weather + zone alert
-│   │   └── Toast.tsx          # Slide-in notifications (success/warning/danger/info)
-│   ├── context/
-│   │   └── AppContext.tsx     # Global state: onboarding, policy, claims, toasts
-│   ├── utils/
-│   │   └── premiumCalc.ts     # Premium formula, risk scoring, plan calculations
-│   ├── data/
-│   │   └── mockData.ts        # Zone disruption history, admin stats, chart data
-│   └── types/
-│       └── index.ts           # TypeScript interfaces for all data structures
+├── client/                # React Frontend (Vite)
+│   ├── src/
+│   │   ├── pages/         # Landing, Onboarding, Dashboard, Admin
+│   │   ├── components/    # Reusable UI components
+│   │   ├── context/       # Global App State
+│   │   ├── utils/         # Premium Calculation Engine
+│   │   ├── data/          # Mock data and constants
+│   │   └── types/         # TypeScript definitions
+│   └── package.json       # Frontend dependencies
+├── server/                # Express Backend (Node.js)
+│   ├── src/
+│   │   ├── routes/        # API Endpoints (Auth, Policy, Claims)
+│   │   ├── controllers/   # Business Logic
+│   │   └── index.ts       # Server Entry Point
+│   ├── prisma/            # Database Schema & Migrations
+│   └── package.json       # Backend dependencies
+└── package.json           # Root scripts for monorepo management
 ```
 
 ---
@@ -181,13 +183,11 @@ shieldroute/
 
 | Layer | Choice | Why |
 |-------|--------|-----|
-| Framework | React 19 + Vite 8 | Fast HMR, modern bundling |
+| Frontend | React 19 + Vite 8 | Fast HMR, modern bundling |
+| Backend | Node.js + Express | Lightweight, scalable API |
+| Database | Prisma + PostgreSQL | Type-safe ORM with production-ready cloud DB support |
 | Language | TypeScript 5 | Type safety across all data flows |
-| Styling | TailwindCSS v4 | Utility-first, custom theme via @theme |
-| Charts | Recharts | Composable, React-native charting |
-| Icons | Lucide React | Clean, consistent icon set |
-| Routing | React Router 7 | Client-side SPA routing |
-| State | Context + useReducer | No external dependency, sufficient for Phase 1 |
+| Styling | TailwindCSS v4 | Utility-first, custom theme |
 
 ---
 
@@ -204,8 +204,56 @@ Open `http://localhost:5173`
 Pages:
 - `/` — Landing page
 - `/onboard` — 4-step onboarding flow
-- `/dashboard` — Rider policy dashboard (requires onboarding first)
-- `/admin` — Insurer intelligence center
+- `/dashboard` — Rider dashboard (requires onboarding first)
+- `/policy` — Rider policy details
+- `/claims` — Rider claims history
+- `/admin-login` — Admin login page
+- `/admin` — Insurer intelligence center (protected route)
+
+Backend API:
+- `http://localhost:4000/health`
+
+---
+
+## Deploying (Netlify + Render)
+
+This repo is now deployment-ready with:
+- `netlify.toml` for frontend hosting on Netlify
+- `render.yaml` for backend hosting on Render
+
+### 1) Deploy Backend on Render
+
+1. Push this repo to GitHub.
+2. In Render, create service from `render.yaml` (Blueprint deploy).
+3. Set required secrets in Render:
+        - `DATABASE_URL`
+        - `JWT_SECRET`
+4. Optional production providers:
+        - Twilio: `OTP_PROVIDER=twilio` + `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_PHONE`
+        - Razorpay: `PAYMENT_PROVIDER=razorpay` + `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`
+5. Keep `OTP_PROVIDER=mock` and `PAYMENT_PROVIDER=mock` for demo mode.
+6. Verify backend: `https://<your-render-service>/health`
+
+### 2) Deploy Frontend on Netlify
+
+1. Connect same GitHub repo in Netlify.
+2. Netlify auto-picks settings from `netlify.toml`:
+        - Base dir: `client`
+        - Build command: `npm run build`
+        - Publish dir: `dist`
+3. Set frontend env vars:
+        - `VITE_API_BASE_URL=https://<your-render-service>`
+        - `VITE_ADMIN_USERNAME=<admin-user>`
+        - `VITE_ADMIN_PASSWORD=<admin-password>`
+4. Add your Netlify domain into Render CORS vars:
+        - `FRONTEND_URL=https://<your-netlify-site>`
+        - optional `FRONTEND_URLS` for extra domains (comma-separated)
+
+### 3) SPA Routing
+
+Frontend deep-link routing (`/dashboard`, `/claims`, `/admin`) is handled via:
+- `client/public/_redirects`
+- `netlify.toml` redirects
 
 ---
 

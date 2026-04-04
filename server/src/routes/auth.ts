@@ -1,7 +1,9 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import jwt from 'jsonwebtoken';
+import type { SignOptions } from 'jsonwebtoken';
 import prisma from '../db/prisma';
+import { sendOtpCode } from '../services/otpService';
 
 const router = Router();
 
@@ -39,14 +41,20 @@ router.post('/send-otp', async (req: Request, res: Response): Promise<void> => {
     data: { phone, code, expiresAt },
   });
 
-  // TODO Phase 2: Send SMS via MSG91
-  // In development, return code directly (remove in production)
+  const delivery = await sendOtpCode(phone, code);
   const isDev = process.env.NODE_ENV === 'development';
+  const exposeDebugOtp = isDev || delivery.mocked;
 
   res.json({
     success: true,
-    message: 'OTP sent successfully',
-    ...(isDev && { debug_otp: code }), // remove in production
+    message: delivery.mocked ? 'OTP generated in mock mode' : 'OTP sent successfully',
+    data: {
+      provider: delivery.provider,
+      mockMode: delivery.mocked,
+      messageId: delivery.messageId,
+      warning: delivery.warning,
+    },
+    ...(exposeDebugOtp && { debug_otp: code }),
   });
 });
 
@@ -99,10 +107,14 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
     });
   }
 
+  const signOptions: SignOptions = {
+    expiresIn: (process.env.JWT_EXPIRES_IN || '7d') as SignOptions['expiresIn'],
+  };
+
   const token = jwt.sign(
     { riderId: rider.id, phone: rider.phone },
     process.env.JWT_SECRET!,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    signOptions
   );
 
   res.json({

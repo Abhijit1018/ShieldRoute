@@ -9,14 +9,29 @@ import onboardingRoutes from './routes/onboarding';
 import policyRoutes from './routes/policy';
 import claimsRoutes from './routes/claims';
 import adminRoutes from './routes/admin';
+import paymentsRoutes from './routes/payments';
+import triggersRoutes from './routes/triggers';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  ...(process.env.FRONTEND_URLS || '').split(',').map(origin => origin.trim()).filter(Boolean),
+].filter(Boolean) as string[];
+
 // ── Security middleware ─────────────────────────────────────────────────────
+app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(null, false);
+  },
   credentials: true,
 }));
 app.use(express.json());
@@ -39,11 +54,13 @@ const otpLimiter = rateLimit({
 app.use('/api/auth/send-otp', otpLimiter);
 
 // ── Routes ──────────────────────────────────────────────────────────────────
-app.use('/api/auth',       authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/onboarding', onboardingRoutes);
-app.use('/api/policy',     policyRoutes);
-app.use('/api/claims',     claimsRoutes);
-app.use('/api/admin',      adminRoutes);
+app.use('/api/policy', policyRoutes);
+app.use('/api/claims', claimsRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/payments', paymentsRoutes);
+app.use('/api/triggers', triggersRoutes);
 
 // Health check
 app.get('/health', (_req, res) => {

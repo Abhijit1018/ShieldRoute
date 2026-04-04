@@ -1,19 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, CheckCircle, ChevronRight, ChevronLeft, Loader } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { ZONE_DISPLAY_NAMES } from '../data/mockData';
-import { buildOnboardingResult, calculatePremium, getPlanCoverage } from '../utils/premiumCalc';
-import type { Platform, Zone, Plan, PeakHour, OnboardingData } from '../types';
+import { assessOnboarding, enrollOnboarding, getApiErrorMessage, sendOtp, verifyOtp } from '../utils/api';
+import { getPlanCoverage } from '../utils/premiumCalc';
+import type { Platform, Zone, Plan, PeakHour } from '../types';
 
 const ZONES = Object.keys(ZONE_DISPLAY_NAMES) as Zone[];
 const PEAK_HOURS: PeakHour[] = ['Morning', 'Afternoon', 'Evening', 'Night'];
 const PLANS: Plan[] = ['Basic', 'Standard', 'Premium'];
 
 const PLAN_INFO = {
-  Basic:    { triggers: 1, desc: 'Weather only',       coveragePct: '70%' },
-  Standard: { triggers: 3, desc: '3 trigger types',    coveragePct: '85%' },
-  Premium:  { triggers: 5, desc: 'All 5 trigger types', coveragePct: '100%' },
+  Basic: { triggers: 1, desc: 'Weather only', coveragePct: '70%' },
+  Standard: { triggers: 3, desc: '3 trigger types', coveragePct: '85%' },
+  Premium: { triggers: 5, desc: 'All 5 trigger types', coveragePct: '100%' },
 };
 
 const AI_LINES = (zone: string) => [
@@ -22,17 +23,33 @@ const AI_LINES = (zone: string) => [
   'Evaluating platform payout patterns...',
 ];
 
+interface AssessmentView {
+  riskScore: number;
+  zoneSafetyRating: 'A' | 'B' | 'C';
+  recommendedPlan: Plan;
+  weatherRisk: number;
+  strikeRisk: number;
+  outageRisk: number;
+  premiumPreview: Record<Plan, number>;
+  coveragePerDay: number;
+  maxWeeklyClaim: number;
+}
+
 function ProgressBar({ step }: { step: number }) {
   return (
     <div className="mb-10">
       <div className="flex items-center justify-between mb-3">
         {['Identity', 'Work Profile', 'AI Assessment', 'Enroll'].map((label, i) => (
           <div key={i} className="flex flex-col items-center gap-1.5 flex-1">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${
-              i < step ? 'bg-[#14B8A6] text-white' :
-              i === step ? 'bg-[#14B8A6]/20 border-2 border-[#14B8A6] text-[#14B8A6]' :
-              'bg-[#1F2937] text-[#6B7280]'
-            }`}>
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${
+                i < step
+                  ? 'bg-[#14B8A6] text-white'
+                  : i === step
+                    ? 'bg-[#14B8A6]/20 border-2 border-[#14B8A6] text-[#14B8A6]'
+                    : 'bg-[#1F2937] text-[#6B7280]'
+              }`}
+            >
               {i < step ? <CheckCircle size={16} /> : i + 1}
             </div>
             <span className={`text-xs font-medium hidden sm:block ${i <= step ? 'text-[#14B8A6]' : 'text-[#6B7280]'}`}>{label}</span>
@@ -63,26 +80,94 @@ export default function Onboarding() {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // AI step state
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+
   const [aiProgress, setAiProgress] = useState(0);
   const [aiLines, setAiLines] = useState<string[]>([]);
   const [aiDone, setAiDone] = useState(false);
-  const [aiResult, setAiResult] = useState<Partial<OnboardingData> | null>(null);
-
-  // Plan selection
+  const [aiResult, setAiResult] = useState<AssessmentView | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<Plan>('Standard');
+  const [enrolling, setEnrolling] = useState(false);
 
-  const { setOnboarding, setPolicy, addToast } = useApp();
+  const { state, setAuth, setOnboarding, setPolicy, refreshData, addToast } = useApp();
   const navigate = useNavigate();
+
+  const isPhoneVerified = useMemo(
+    () => Boolean(state.auth && state.auth.phone === form.phone),
+    [state.auth, form.phone]
+  );
+
+  useEffect(() => {
+    if (!isPhoneVerified) return;
+    setOtpSent(true);
+    setOtpCode('');
+  }, [isPhoneVerified]);
 
   function validate() {
     const e: Record<string, string> = {};
+
     if (step === 0) {
       if (!form.name.trim()) e.name = 'Name is required';
       if (!/^\d{10}$/.test(form.phone)) e.phone = 'Enter a valid 10-digit phone number';
+      if (!isPhoneVerified) e.phone = 'Verify your OTP to continue';
     }
+
+    if (step === 1 && form.peakHours.length === 0) {
+      e.peakHours = 'Select at least one peak hour';
+    }
+
     setErrors(e);
     return Object.keys(e).length === 0;
+  }
+
+  async function handleSendOtp() {
+    if (!/^\d{10}$/.test(form.phone)) {
+      setErrors(prev => ({ ...prev, phone: 'Enter a valid 10-digit phone number' }));
+      return;
+    }
+
+    setSendingOtp(true);
+
+    try {
+      const result = await sendOtp(form.phone);
+      setOtpSent(true);
+      addToast(result.mockMode ? 'OTP generated in mock mode.' : 'OTP sent successfully.', 'success');
+
+      if (result.debugOtp) {
+        setOtpCode(result.debugOtp);
+        addToast(`Debug OTP: ${result.debugOtp}`, 'info');
+      }
+
+      if (result.warning) {
+        addToast(result.warning, 'warning');
+      }
+    } catch (error) {
+      addToast(getApiErrorMessage(error, 'Failed to send OTP.'), 'danger');
+    } finally {
+      setSendingOtp(false);
+    }
+  }
+
+  async function handleVerifyOtp() {
+    if (!/^\d{6}$/.test(otpCode)) {
+      addToast('Enter a valid 6-digit OTP.', 'warning');
+      return;
+    }
+
+    setVerifyingOtp(true);
+
+    try {
+      const auth = await verifyOtp(form.phone, otpCode);
+      setAuth(auth);
+      addToast('Phone verified successfully.', 'success');
+    } catch (error) {
+      addToast(getApiErrorMessage(error, 'OTP verification failed.'), 'danger');
+    } finally {
+      setVerifyingOtp(false);
+    }
   }
 
   function next() {
@@ -90,9 +175,17 @@ export default function Onboarding() {
     setStep(s => s + 1);
   }
 
-  // Run AI analysis when step becomes 2
   useEffect(() => {
     if (step !== 2) return;
+
+    const authToken = state.auth?.token;
+
+    if (!authToken) {
+      addToast('Please verify OTP before AI assessment.', 'warning');
+      setStep(0);
+      return;
+    }
+
     setAiProgress(0);
     setAiLines([]);
     setAiDone(false);
@@ -104,72 +197,87 @@ export default function Onboarding() {
     const lineTimer = setInterval(() => {
       if (lineIdx < lines.length) {
         setAiLines(prev => [...prev, lines[lineIdx]]);
-        lineIdx++;
+        lineIdx += 1;
       }
     }, 800);
 
     const progressTimer = setInterval(() => {
       setAiProgress(p => {
-        if (p >= 100) { clearInterval(progressTimer); return 100; }
+        if (p >= 95) return p;
         return p + 3;
       });
     }, 90);
 
-    const doneTimer = setTimeout(() => {
+    const runAssessment = async () => {
+      try {
+        const result = await assessOnboarding(authToken, {
+          platform: form.platform,
+          yearsActive: form.yearsActive,
+          zone: form.zone,
+          weeklyHours: form.weeklyHours,
+          weeklyEarnings: form.weeklyEarnings,
+          peakHours: form.peakHours,
+        });
+
+        setAiResult(result);
+        setSelectedPlan(result.recommendedPlan);
+        setAiProgress(100);
+        setAiDone(true);
+      } catch (error) {
+        addToast(getApiErrorMessage(error, 'Unable to run AI assessment.'), 'danger');
+        setStep(1);
+      } finally {
+        clearInterval(lineTimer);
+        clearInterval(progressTimer);
+      }
+    };
+
+    void runAssessment();
+
+    return () => {
       clearInterval(lineTimer);
       clearInterval(progressTimer);
-      setAiProgress(100);
-      const result = buildOnboardingResult({ ...form });
-      setAiResult(result);
-      setSelectedPlan(result.recommendedPlan || 'Standard');
-      setAiDone(true);
-    }, 3200);
+    };
+  }, [
+    addToast,
+    form.peakHours,
+    form.platform,
+    form.weeklyEarnings,
+    form.weeklyHours,
+    form.yearsActive,
+    form.zone,
+    state.auth?.token,
+    step,
+  ]);
 
-    return () => { clearInterval(lineTimer); clearInterval(progressTimer); clearTimeout(doneTimer); };
-  }, [step]);
+  async function enroll() {
+    if (!aiResult || !state.auth?.token) return;
 
-  function enroll() {
-    if (!aiResult) return;
+    setEnrolling(true);
 
-    const premium = calculatePremium(
-      form.weeklyEarnings,
-      form.zone,
-      form.weeklyHours,
-      form.platform,
-      aiResult.riskScore!,
-      selectedPlan
-    );
+    try {
+      const policy = await enrollOnboarding(state.auth.token, {
+        name: form.name,
+        platform: form.platform,
+        yearsActive: form.yearsActive,
+        zone: form.zone,
+        weeklyHours: form.weeklyHours,
+        weeklyEarnings: form.weeklyEarnings,
+        peakHours: form.peakHours,
+        selectedPlan,
+      });
 
-    const coveragePerDay = getPlanCoverage(selectedPlan, aiResult.coveragePerDay!);
-    const maxWeeklyClaim = aiResult.maxWeeklyClaim!;
+      setPolicy(policy);
+      setOnboarding(policy.onboarding);
+      await refreshData({ silent: true });
 
-    const data: OnboardingData = {
-      ...form,
-      ...(aiResult as Partial<OnboardingData>),
-      selectedPlan,
-      weeklyPremium: premium,
-      coveragePerDay,
-      maxWeeklyClaim,
-    } as OnboardingData;
-
-    setOnboarding(data);
-
-    const now = new Date();
-    const renewal = new Date(now);
-    renewal.setDate(renewal.getDate() + 7);
-
-    const policyId = `SR${Math.floor(Math.random() * 90 + 10)}-${Math.floor(Math.random() * 900000 + 100000)}`;
-
-    setPolicy({
-      policyId,
-      status: 'Active',
-      startDate: now.toLocaleDateString('en-IN'),
-      renewalDate: renewal.toLocaleDateString('en-IN'),
-      onboarding: data,
-    });
-
-    addToast(`Welcome, ${form.name}! Your policy ${policyId} is now active.`, 'success');
-    navigate('/dashboard');
+      addToast(`Welcome, ${form.name}! Policy ${policy.policyId} is active.`, 'success');
+      navigate('/dashboard');
+    } catch (error) {
+      addToast(getApiErrorMessage(error, 'Enrollment failed. Please retry.'), 'danger');
+    } finally {
+      setEnrolling(false);
+    }
   }
 
   const incomeEstimate = Math.round((form.weeklyHours / 40) * form.weeklyEarnings);
@@ -177,7 +285,6 @@ export default function Onboarding() {
   return (
     <div className="min-h-screen bg-[#0A0E1A] py-12 px-4 sm:px-6">
       <div className="max-w-2xl mx-auto">
-        {/* Header */}
         <div className="text-center mb-10">
           <div className="w-12 h-12 bg-[#14B8A6] rounded-xl flex items-center justify-center mx-auto mb-4">
             <Shield size={24} className="text-white" />
@@ -189,7 +296,6 @@ export default function Onboarding() {
         <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6 sm:p-8">
           <ProgressBar step={step} />
 
-          {/* STEP 0: Identity */}
           {step === 0 && (
             <div className="space-y-5 animate-fade-in-up">
               <h2 className="text-xl font-bold text-[#F9FAFB] mb-6">Tell us about yourself</h2>
@@ -207,15 +313,66 @@ export default function Onboarding() {
 
               <div>
                 <label className="text-sm text-[#6B7280] mb-1.5 block">Phone Number</label>
-                <input
-                  className="w-full bg-[#1C2537] border border-[#1F2937] rounded-xl px-4 py-3 text-[#F9FAFB] focus:outline-none focus:border-[#14B8A6] transition-colors"
-                  placeholder="10-digit mobile number"
-                  maxLength={10}
-                  value={form.phone}
-                  onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '') }))}
-                />
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 bg-[#1C2537] border border-[#1F2937] rounded-xl px-4 py-3 text-[#F9FAFB] focus:outline-none focus:border-[#14B8A6] transition-colors"
+                    placeholder="10-digit mobile number"
+                    maxLength={10}
+                    value={form.phone}
+                    onChange={e => {
+                      const phone = e.target.value.replace(/\D/g, '');
+                      setForm(f => ({ ...f, phone }));
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendOtp}
+                    disabled={sendingOtp || isPhoneVerified}
+                    className={`px-4 rounded-xl text-sm font-bold transition-colors ${
+                      sendingOtp || isPhoneVerified
+                        ? 'bg-[#1F2937] text-[#6B7280] cursor-not-allowed'
+                        : 'bg-[#14B8A6] hover:bg-[#0D9488] text-white'
+                    }`}
+                  >
+                    {isPhoneVerified ? 'Verified' : sendingOtp ? 'Sending...' : 'Send OTP'}
+                  </button>
+                </div>
                 {errors.phone && <p className="text-[#EF4444] text-xs mt-1">{errors.phone}</p>}
               </div>
+
+              {otpSent && !isPhoneVerified && (
+                <div className="bg-[#1C2537] border border-[#1F2937] rounded-xl p-4 space-y-3">
+                  <label className="text-sm text-[#6B7280] block">Enter OTP</label>
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 bg-[#111827] border border-[#1F2937] rounded-xl px-4 py-3 text-[#F9FAFB] focus:outline-none focus:border-[#14B8A6] transition-colors"
+                      placeholder="6-digit OTP"
+                      maxLength={6}
+                      value={otpCode}
+                      onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleVerifyOtp}
+                      disabled={verifyingOtp}
+                      className={`px-4 rounded-xl text-sm font-bold transition-colors ${
+                        verifyingOtp
+                          ? 'bg-[#1F2937] text-[#6B7280] cursor-not-allowed'
+                          : 'bg-[#14B8A6] hover:bg-[#0D9488] text-white'
+                      }`}
+                    >
+                      {verifyingOtp ? 'Verifying...' : 'Verify'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isPhoneVerified && (
+                <div className="flex items-center gap-2 p-3 bg-[#14B8A6]/10 border border-[#14B8A6]/20 rounded-xl text-sm text-[#14B8A6] font-medium">
+                  <CheckCircle size={16} />
+                  OTP verified for {form.phone}
+                </div>
+              )}
 
               <div>
                 <label className="text-sm text-[#6B7280] mb-1.5 block">Delivery Platform</label>
@@ -238,19 +395,27 @@ export default function Onboarding() {
 
               <div>
                 <label className="text-sm text-[#6B7280] mb-1.5 block">
-                  Years Active: <span className="text-[#14B8A6] font-bold">{form.yearsActive} yr{form.yearsActive !== 1 ? 's' : ''}</span>
+                  Years Active:{' '}
+                  <span className="text-[#14B8A6] font-bold">
+                    {form.yearsActive} yr{form.yearsActive !== 1 ? 's' : ''}
+                  </span>
                 </label>
                 <input
-                  type="range" min={0} max={10} value={form.yearsActive}
+                  type="range"
+                  min={0}
+                  max={10}
+                  value={form.yearsActive}
                   onChange={e => setForm(f => ({ ...f, yearsActive: +e.target.value }))}
                   className="w-full accent-[#14B8A6]"
                 />
-                <div className="flex justify-between text-xs text-[#6B7280] mt-1"><span>0</span><span>10 years</span></div>
+                <div className="flex justify-between text-xs text-[#6B7280] mt-1">
+                  <span>0</span>
+                  <span>10 years</span>
+                </div>
               </div>
             </div>
           )}
 
-          {/* STEP 1: Work Profile */}
           {step === 1 && (
             <div className="space-y-5 animate-fade-in-up">
               <h2 className="text-xl font-bold text-[#F9FAFB] mb-6">Your Work Profile</h2>
@@ -273,7 +438,10 @@ export default function Onboarding() {
                   Avg Weekly Hours: <span className="text-[#14B8A6] font-bold">{form.weeklyHours} hrs</span>
                 </label>
                 <input
-                  type="range" min={20} max={80} value={form.weeklyHours}
+                  type="range"
+                  min={20}
+                  max={80}
+                  value={form.weeklyHours}
                   onChange={e => setForm(f => ({ ...f, weeklyHours: +e.target.value }))}
                   className="w-full accent-[#14B8A6]"
                 />
@@ -290,7 +458,7 @@ export default function Onboarding() {
                   className="w-full bg-[#1C2537] border border-[#1F2937] rounded-xl px-4 py-3 text-[#F9FAFB] focus:outline-none focus:border-[#14B8A6] transition-colors"
                   placeholder="e.g. 7000"
                   value={form.weeklyEarnings}
-                  onChange={e => setForm(f => ({ ...f, weeklyEarnings: +e.target.value }))}
+                  onChange={e => setForm(f => ({ ...f, weeklyEarnings: +e.target.value || 0 }))}
                 />
               </div>
 
@@ -300,12 +468,14 @@ export default function Onboarding() {
                   {PEAK_HOURS.map(h => (
                     <button
                       key={h}
-                      onClick={() => setForm(f => ({
-                        ...f,
-                        peakHours: f.peakHours.includes(h)
-                          ? f.peakHours.filter(p => p !== h)
-                          : [...f.peakHours, h]
-                      }))}
+                      onClick={() =>
+                        setForm(f => ({
+                          ...f,
+                          peakHours: f.peakHours.includes(h)
+                            ? f.peakHours.filter(p => p !== h)
+                            : [...f.peakHours, h],
+                        }))
+                      }
                       className={`px-4 py-2 rounded-full text-sm font-medium border transition-all duration-200 ${
                         form.peakHours.includes(h)
                           ? 'bg-[#14B8A6]/10 border-[#14B8A6] text-[#14B8A6]'
@@ -316,11 +486,11 @@ export default function Onboarding() {
                     </button>
                   ))}
                 </div>
+                {errors.peakHours && <p className="text-[#EF4444] text-xs mt-1">{errors.peakHours}</p>}
               </div>
             </div>
           )}
 
-          {/* STEP 2: AI Assessment */}
           {step === 2 && (
             <div className="animate-fade-in-up">
               <h2 className="text-xl font-bold text-[#F9FAFB] mb-6">AI Risk Assessment</h2>
@@ -363,37 +533,49 @@ export default function Onboarding() {
                 </div>
               ) : aiResult && (
                 <div className="space-y-5">
-                  {/* Risk Score */}
                   <div className="bg-[#1C2537] rounded-2xl p-5 border border-[#1F2937]">
                     <div className="flex items-center justify-between mb-4">
                       <span className="text-[#6B7280] text-sm font-medium">Risk Score</span>
-                      <span className={`text-xs px-2 py-1 rounded-lg font-bold ${
-                        aiResult.riskScore! < 65 ? 'bg-green-500/10 text-green-400' :
-                        aiResult.riskScore! <= 75 ? 'bg-[#F59E0B]/10 text-[#F59E0B]' :
-                        'bg-[#EF4444]/10 text-[#EF4444]'
-                      }`}>
+                      <span
+                        className={`text-xs px-2 py-1 rounded-lg font-bold ${
+                          aiResult.riskScore < 65
+                            ? 'bg-green-500/10 text-green-400'
+                            : aiResult.riskScore <= 75
+                              ? 'bg-[#F59E0B]/10 text-[#F59E0B]'
+                              : 'bg-[#EF4444]/10 text-[#EF4444]'
+                        }`}
+                      >
                         Zone Safety: {aiResult.zoneSafetyRating}
                       </span>
                     </div>
                     <div className="flex items-end gap-2 mb-3">
-                      <span className={`text-5xl font-black ${
-                        aiResult.riskScore! < 65 ? 'text-green-400' :
-                        aiResult.riskScore! <= 75 ? 'text-[#F59E0B]' : 'text-[#EF4444]'
-                      }`}>{aiResult.riskScore}</span>
+                      <span
+                        className={`text-5xl font-black ${
+                          aiResult.riskScore < 65
+                            ? 'text-green-400'
+                            : aiResult.riskScore <= 75
+                              ? 'text-[#F59E0B]'
+                              : 'text-[#EF4444]'
+                        }`}
+                      >
+                        {aiResult.riskScore}
+                      </span>
                       <span className="text-[#6B7280] text-sm mb-2">/ 100</span>
                     </div>
                     <div className="h-2 bg-[#0A0E1A] rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-700 ${
-                          aiResult.riskScore! < 65 ? 'bg-green-400' :
-                          aiResult.riskScore! <= 75 ? 'bg-[#F59E0B]' : 'bg-[#EF4444]'
+                          aiResult.riskScore < 65
+                            ? 'bg-green-400'
+                            : aiResult.riskScore <= 75
+                              ? 'bg-[#F59E0B]'
+                              : 'bg-[#EF4444]'
                         }`}
                         style={{ width: `${aiResult.riskScore}%` }}
                       />
                     </div>
                   </div>
 
-                  {/* Risk breakdown */}
                   <div className="grid grid-cols-3 gap-3">
                     {[
                       { label: 'Weather Risk', value: aiResult.weatherRisk, color: 'text-blue-400' },
@@ -418,7 +600,6 @@ export default function Onboarding() {
             </div>
           )}
 
-          {/* STEP 3: Enroll */}
           {step === 3 && aiResult && (
             <div className="animate-fade-in-up space-y-6">
               <h2 className="text-xl font-bold text-[#F9FAFB] mb-2">Choose Your Plan</h2>
@@ -426,11 +607,8 @@ export default function Onboarding() {
 
               <div className="grid gap-4">
                 {PLANS.map(plan => {
-                  const premium = calculatePremium(
-                    form.weeklyEarnings, form.zone, form.weeklyHours, form.platform,
-                    aiResult.riskScore!, plan
-                  );
-                  const covDay = getPlanCoverage(plan, aiResult.coveragePerDay!);
+                  const premium = aiResult.premiumPreview[plan];
+                  const covDay = getPlanCoverage(plan, aiResult.coveragePerDay);
                   const isRec = plan === aiResult.recommendedPlan;
                   const isSelected = plan === selectedPlan;
 
@@ -462,9 +640,18 @@ export default function Onboarding() {
                         </div>
                       </div>
                       <div className="flex gap-4 mt-4 text-xs">
-                        <div><span className="text-[#6B7280]">Coverage/day: </span><span className="text-[#F9FAFB] font-medium">₹{covDay}</span></div>
-                        <div><span className="text-[#6B7280]">Weekly cap: </span><span className="text-[#F9FAFB] font-medium">₹{aiResult.maxWeeklyClaim}</span></div>
-                        <div><span className="text-[#6B7280]">Triggers: </span><span className="text-[#F9FAFB] font-medium">{PLAN_INFO[plan].triggers}</span></div>
+                        <div>
+                          <span className="text-[#6B7280]">Coverage/day: </span>
+                          <span className="text-[#F9FAFB] font-medium">₹{covDay}</span>
+                        </div>
+                        <div>
+                          <span className="text-[#6B7280]">Weekly cap: </span>
+                          <span className="text-[#F9FAFB] font-medium">₹{aiResult.maxWeeklyClaim}</span>
+                        </div>
+                        <div>
+                          <span className="text-[#6B7280]">Triggers: </span>
+                          <span className="text-[#F9FAFB] font-medium">{PLAN_INFO[plan].triggers}</span>
+                        </div>
                       </div>
                     </button>
                   );
@@ -473,15 +660,19 @@ export default function Onboarding() {
 
               <button
                 onClick={enroll}
-                className="w-full py-4 bg-[#14B8A6] hover:bg-[#0D9488] text-white font-bold text-lg rounded-xl transition-all duration-200 hover:scale-[1.02] glow-teal flex items-center justify-center gap-2"
+                disabled={enrolling}
+                className={`w-full py-4 text-white font-bold text-lg rounded-xl transition-all duration-200 flex items-center justify-center gap-2 ${
+                  enrolling
+                    ? 'bg-[#1F2937] text-[#6B7280] cursor-not-allowed'
+                    : 'bg-[#14B8A6] hover:bg-[#0D9488] hover:scale-[1.02] glow-teal'
+                }`}
               >
                 <Shield size={20} />
-                Enroll Now — Activate Protection
+                {enrolling ? 'Activating Policy...' : 'Enroll Now — Activate Protection'}
               </button>
             </div>
           )}
 
-          {/* Navigation buttons */}
           {step < 3 && (
             <div className="flex gap-3 mt-8">
               {step > 0 && (
