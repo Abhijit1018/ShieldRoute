@@ -1,14 +1,19 @@
-import { Shield, Home, LayoutDashboard, Settings } from 'lucide-react';
+import { Activity, ClipboardList, Home, LayoutDashboard, LogIn, Shield } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
+import { isAdminAuthenticated } from '../utils/adminAuth';
 
 const NAV_LINKS = [
   { to: '/', label: 'Home', icon: Home },
-  { to: '/dashboard', label: 'My Policy', icon: LayoutDashboard },
-  { to: '/admin', label: 'Admin', icon: Settings },
+  { to: '/dashboard', label: 'Dashboard', icon: Activity },
+  { to: '/policy', label: 'My Policy', icon: LayoutDashboard },
+  { to: '/claims', label: 'Claims', icon: ClipboardList },
 ];
 
 export default function Navbar() {
   const { pathname } = useLocation();
+  const adminAuthed = isAdminAuthenticated();
+  const adminPath = adminAuthed ? '/admin' : '/admin-login';
+  const adminLabel = adminAuthed ? 'Admin Panel' : 'Admin Login';
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-[#1F2937] bg-[#0A0E1A]/90 backdrop-blur-sm">
@@ -44,6 +49,13 @@ export default function Navbar() {
 
           {/* Right side — live status */}
           <div className="flex items-center gap-3">
+            <Link
+              to={adminPath}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#14B8A6]/30 text-xs text-[#14B8A6] hover:bg-[#14B8A6]/10 transition-colors"
+            >
+              <LogIn size={13} />
+              {adminLabel}
+            </Link>
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#111827] border border-[#1F2937] text-xs">
               <span>🌧</span>
               <span className="text-[#6B7280]">Mumbai:</span>
@@ -72,6 +84,17 @@ export default function Navbar() {
               {label}
             </Link>
           ))}
+          <Link
+            to={adminPath}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all duration-200 ${
+              pathname === '/admin' || pathname === '/admin-login'
+                ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                : 'text-[#6B7280] hover:text-[#F9FAFB]'
+            }`}
+          >
+            <LogIn size={13} />
+            {adminLabel}
+          </Link>
         </div>
       </div>
     </nav>
