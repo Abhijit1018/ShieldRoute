@@ -39,11 +39,11 @@ const otpLimiter = rateLimit({
 app.use('/api/auth/send-otp', otpLimiter);
 
 // ── Routes ──────────────────────────────────────────────────────────────────
-app.use('/api/auth',       authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/onboarding', onboardingRoutes);
-app.use('/api/policy',     policyRoutes);
-app.use('/api/claims',     claimsRoutes);
-app.use('/api/admin',      adminRoutes);
+app.use('/api/policy', policyRoutes);
+app.use('/api/claims', claimsRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/health', (_req, res) => {
